@@ -10,6 +10,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   src = ./.;
 
+  buildType = "debug";
+
   cargoHash = "sha256-aqq4k92U9aKlZa8byMFfJUvr1EQ0MJExy30vdzvd5nI=";
 
   meta = {
@@ -17,5 +19,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
     homepage = "https://git.numtide.com/magic_rb/disko-zfs";
     license = lib.licenses.gpl3;
     maintainers = [ ];
+    mainProgram = "disko-zfs";
   };
 })
