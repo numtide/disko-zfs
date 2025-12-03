@@ -412,6 +412,24 @@ trait ActionProducer {
     fn produce_error(&mut self, error: String);
 }
 
+fn is_k_syntax<S>(str: S, int: &i64) -> bool
+where
+    S: AsRef<str>,
+{
+    let str = str.as_ref();
+    let beginning = (str.ends_with("K") || str.ends_with("k"));
+    let end = i64::from_str(&str[..str.len() - 1])
+        .map(|parsed| parsed * 1024)
+        .unwrap_or(0);
+
+    log::trace!("beginning {} end {}", beginning, end);
+
+    (str.ends_with("K") || str.ends_with("k"))
+        && i64::from_str(&str[..str.len() - 1])
+            .map(|parsed| parsed * 1024 == *int)
+            .unwrap_or(false)
+}
+
 fn eval_spec<AP>(action_producer: &mut AP, state: &ZfsListOutput, spec: &ZfsSpec)
 where
     AP: ActionProducer,
@@ -432,14 +450,40 @@ where
                         | PropertySource::Inherited { .. }
                         | PropertySource::Default { .. } => {
                             if property_state.value != *value {
-                                log::trace!(
-                                    "dataset {} property {} set to {}, modify to {}",
-                                    name,
-                                    property,
-                                    property_state.value.to_string(),
-                                    value.to_string()
-                                );
-                                properties.insert(property.to_owned(), value.to_owned());
+                                match (&property_state.value, value) {
+                                    (PropertyValue::String(str), PropertyValue::Integer(int))
+                                        if is_k_syntax(str, int) =>
+                                    {
+                                        log::trace!(
+                                            "dataset {} property {} set to {}, guessing to be equal to {}, skip",
+                                            name,
+                                            property,
+                                            property_state.value.to_string(),
+                                            value.to_string()
+                                        );
+                                    }
+                                    (PropertyValue::Integer(int), PropertyValue::String(str))
+                                        if is_k_syntax(str, int) =>
+                                    {
+                                        log::trace!(
+                                            "dataset {} property {} set to {}, guessing to be equal to {}, skip",
+                                            name,
+                                            property,
+                                            property_state.value.to_string(),
+                                            value.to_string()
+                                        );
+                                    }
+                                    _ => {
+                                        log::trace!(
+                                            "dataset {} property {} set to {}, modify to {}",
+                                            name,
+                                            property,
+                                            property_state.value.to_string(),
+                                            value.to_string()
+                                        );
+                                        properties.insert(property.to_owned(), value.to_owned());
+                                    }
+                                }
                             } else {
                                 log::trace!(
                                     "dataset {} property {} already set to {}, skip",
