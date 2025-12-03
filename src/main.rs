@@ -292,16 +292,14 @@ impl ActionSet {
                     dataset,
                     properties,
                 } => {
-                    vec![
-                        "zfs".to_owned(),
-                        "set".to_owned(),
+                    let mut vec = vec!["zfs".to_owned(), "set".to_owned()];
+                    vec.extend(
                         properties
                             .into_iter()
-                            .map(|(name, value)| format!("{}={}", name, value.to_string()))
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                        dataset.to_owned(),
-                    ]
+                            .map(|(name, value)| format!("{}={}", name, value.to_string())),
+                    );
+                    vec.push(dataset.to_owned());
+                    vec
                 }
             })
             .collect()
