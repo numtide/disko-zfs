@@ -29,200 +29,14 @@ use clap::Parser as _;
 use serde::{Deserialize, Serialize, de::Visitor};
 use serde_derive::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug)]
-struct ZfsListOutputVersion {
-    command: String,
-    vers_major: i32,
-    vers_minor: i32,
-}
-
-#[derive(Deserialize, Debug)]
-enum DatasetType {
-    #[serde(rename(deserialize = "FILESYSTEM"))]
-    FileSystem,
-    #[serde(rename(deserialize = "SNAPSHOT"))]
-    Snapshot,
-    #[serde(rename(deserialize = "ZVOL"))]
-    Zvol,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PropertyValue {
-    Integer(i64),
-    String(String),
-}
-
-impl PropertyValue {
-    pub fn to_string(&self) -> String {
-        match self {
-            PropertyValue::Integer(int) => int.to_string(),
-            PropertyValue::String(string) => string.clone(),
-        }
-    }
-
-    pub fn new_string<S>(str: S) -> PropertyValue
-    where
-        S: AsRef<str>,
-    {
-        PropertyValue::String(str.as_ref().to_owned())
-    }
-
-    pub fn new_integer(integer: i64) -> PropertyValue {
-        PropertyValue::Integer(integer)
-    }
-}
-
-struct PropertyValueVisitor;
-
-impl<'de> Visitor<'de> for PropertyValueVisitor {
-    type Value = PropertyValue;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("either a integer or string")
-    }
-
-    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Self::Value::Integer(v))
-    }
-
-    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Self::Value::Integer(v as i64))
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Self::Value::String(v.to_owned()))
-    }
-}
-
-impl<'de> Deserialize<'de> for PropertyValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_any(PropertyValueVisitor)
-    }
-}
-
-impl Serialize for PropertyValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            PropertyValue::Integer(int) => int.serialize(serializer),
-            PropertyValue::String(str) => str.serialize(serializer),
-        }
-    }
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(tag = "type")]
-enum PropertySource {
-    #[serde(rename(deserialize = "LOCAL"))]
-    Local { data: String },
-    #[serde(rename(deserialize = "NONE"))]
-    None { data: String },
-    #[serde(rename(deserialize = "INHERITED"))]
-    Inherited { data: String },
-    #[serde(rename(deserialize = "DEFAULT"))]
-    Default { data: String },
-    #[serde(rename(deserialize = "TEMPORARY"))]
-    TEMPORARY { data: String },
-}
-
-#[derive(Deserialize, Debug)]
-struct Property {
-    value: PropertyValue,
-    source: PropertySource,
-}
-
-#[derive(Deserialize, Debug)]
-struct Dataset {
-    name: String,
-    r#type: DatasetType,
-    pool: String,
-    createtxg: i32,
-    properties: HashMap<String, Property>,
-}
-
-impl Dataset {
-    pub fn get_property<'a, S>(&'a self, name: S) -> Option<&'a Property>
-    where
-        S: AsRef<str>,
-    {
-        self.properties.get(name.as_ref())
-    }
-
-    pub fn get_property_mut<'a, S>(&'a mut self, name: S) -> Option<&'a mut Property>
-    where
-        S: AsRef<str>,
-    {
-        self.properties.get_mut(name.as_ref())
-    }
-}
-
-#[derive(Deserialize, Debug)]
-struct ZfsListOutput {
-    output_version: ZfsListOutputVersion,
-    datasets: HashMap<String, Dataset>,
-}
-
-impl ZfsListOutput {
-    pub fn from_command<I, S>(command: Option<I>) -> Result<ZfsListOutput, std::io::Error>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        fn go<'a, I>(head: &str, tail: I) -> Result<ZfsListOutput, std::io::Error>
-        where
-            I: Iterator<Item = &'a str>,
-        {
-            Command::new(head)
-                .args(tail)
-                .output()
-                .and_then(|output| serde_json::from_slice(&output.stdout).map_err(|err| err.into()))
-        }
-
-        match command {
-            Some(command) => {
-                let iter1 = command.into_iter().collect::<Vec<S>>();
-                let mut iter = iter1.iter().map(|s| s.as_ref());
-                go(iter.next().unwrap(), iter)
-            }
-            None => go("zfs", ["get", "all", "--json", "--json-int"].into_iter()),
-        }
-    }
-
-    pub fn from_reader<R>(rdr: R) -> Result<ZfsListOutput, serde_json::Error>
-    where
-        R: Read,
-    {
-        serde_json::from_reader(rdr)
-    }
-
-    pub fn get_dataset<'a, S>(&'a self, name: S) -> Option<&'a Dataset>
-    where
-        S: AsRef<str>,
-    {
-        self.datasets.get(name.as_ref())
-    }
-
-    pub fn get_dataset_mut<'a, S>(&'a mut self, name: S) -> Option<&'a mut Dataset>
-    where
-        S: AsRef<str>,
-    {
-        self.datasets.get_mut(name.as_ref())
-    }
-}
+use crate::{
+    property::{Property, PropertySource, PropertyValue},
+    zfs_list_output::ZfsList,
+    zfs_specification::ZfsSpecification,
+};
+mod property;
+mod zfs_list_output;
+mod zfs_specification;
 
 #[derive(Debug)]
 enum ZfsAction {
@@ -234,39 +48,6 @@ enum ZfsAction {
         dataset: String,
         properties: HashMap<String, PropertyValue>,
     },
-}
-
-#[derive(Deserialize, Serialize)]
-struct ZfsSpecDataset {
-    properties: HashMap<String, PropertyValue>,
-}
-
-impl ZfsSpecDataset {
-    pub fn new<S>(properties: HashMap<S, PropertyValue>) -> ZfsSpecDataset
-    where
-        S: AsRef<str>,
-    {
-        ZfsSpecDataset {
-            properties: properties
-                .into_iter()
-                .map(|(k, v)| (k.as_ref().to_owned(), v))
-                .collect(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-struct ZfsSpec {
-    datasets: HashMap<String, ZfsSpecDataset>,
-}
-
-impl ZfsSpec {
-    pub fn from_reader<R>(rdr: R) -> Result<ZfsSpec, serde_json::Error>
-    where
-        R: Read,
-    {
-        serde_json::from_reader(rdr)
-    }
 }
 
 #[derive(Debug)]
@@ -428,15 +209,15 @@ where
             .unwrap_or(false)
 }
 
-fn eval_spec<AP>(action_producer: &mut AP, state: &ZfsListOutput, spec: &ZfsSpec)
+fn eval_spec<AP>(action_producer: &mut AP, current: &ZfsSpecification, desired: &ZfsSpecification)
 where
     AP: ActionProducer,
 {
-    let mut datasets = spec.datasets.iter().collect::<Vec<_>>();
+    let mut datasets = desired.datasets.iter().collect::<Vec<_>>();
     datasets.sort_by_key(|(key, _)| key.len());
 
     for (name, dataset) in datasets {
-        if let Some(dataset_state) = state.get_dataset(name) {
+        if let Some(dataset_state) = current.get_dataset(name) {
             log::trace!("dataset {} already exists", name);
 
             let mut properties = HashMap::new();
@@ -444,31 +225,31 @@ where
             for (property, value) in &dataset.properties {
                 if let Some(property_state) = dataset_state.get_property(property) {
                     match property_state.source {
-                        PropertySource::Local { .. }
-                        | PropertySource::Inherited { .. }
-                        | PropertySource::Default { .. } => {
-                            if property_state.value != *value {
-                                match (&property_state.value, value) {
+                        Some(PropertySource::Local { .. })
+                        | Some(PropertySource::Inherited { .. })
+                        | Some(PropertySource::Default { .. }) => {
+                            if property_state.value != value.value {
+                                match (&property_state.value, &value.value) {
                                     (PropertyValue::String(str), PropertyValue::Integer(int))
-                                        if is_k_syntax(str, int) =>
+                                        if is_k_syntax(str, &int) =>
                                     {
                                         log::trace!(
                                             "dataset {} property {} set to {}, guessing to be equal to {}, skip",
                                             name,
                                             property,
                                             property_state.value.to_string(),
-                                            value.to_string()
+                                            value.value.to_string()
                                         );
                                     }
                                     (PropertyValue::Integer(int), PropertyValue::String(str))
-                                        if is_k_syntax(str, int) =>
+                                        if is_k_syntax(str, &int) =>
                                     {
                                         log::trace!(
                                             "dataset {} property {} set to {}, guessing to be equal to {}, skip",
                                             name,
                                             property,
                                             property_state.value.to_string(),
-                                            value.to_string()
+                                            value.value.to_string()
                                         );
                                     }
                                     _ => {
@@ -477,7 +258,7 @@ where
                                             name,
                                             property,
                                             property_state.value.to_string(),
-                                            value.to_string()
+                                            value.value.to_string()
                                         );
                                         properties.insert(property.to_owned(), value.to_owned());
                                     }
@@ -487,7 +268,7 @@ where
                                     "dataset {} property {} already set to {}, skip",
                                     name,
                                     property,
-                                    value.to_string()
+                                    value.value.to_string()
                                 );
                             }
                         }
@@ -504,7 +285,7 @@ where
                         "dataset {} property {} not set, set to {}",
                         name,
                         property,
-                        value.to_string(),
+                        value.value.to_string(),
                     );
                     properties.insert(property.to_owned(), value.to_owned());
                 }
@@ -513,7 +294,10 @@ where
             if !properties.is_empty() {
                 action_producer.produce_action(ZfsAction::SetProperties {
                     dataset: name.to_owned(),
-                    properties,
+                    properties: properties
+                        .into_iter()
+                        .map(|(k, v)| (k, v.value))
+                        .collect::<HashMap<_, _>>(),
                 })
             }
         } else {
@@ -536,7 +320,7 @@ where
             }
 
             for dataset_part in PrefixPaths::new(&name) {
-                if state.get_dataset(dataset_part).is_none() {
+                if current.get_dataset(dataset_part).is_none() {
                     log::trace!("create parent dataset {}", dataset_part);
                     action_producer.produce_action(ZfsAction::CreateDataset {
                         name: dataset_part.to_owned(),
@@ -550,13 +334,17 @@ where
                 dataset
                     .properties
                     .iter()
-                    .map(|(name, value)| format!("{}={}", name, value.to_string()))
+                    .map(|(name, value)| format!("{}={}", name, value.value.to_string()))
                     .collect::<Vec<_>>()
                     .join(" ")
             );
             action_producer.produce_action(ZfsAction::CreateDataset {
                 name: name.to_owned(),
-                properties: dataset.properties.to_owned(),
+                properties: dataset
+                    .properties
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.value.clone()))
+                    .collect::<HashMap<_, _>>(),
             })
         }
     }
@@ -631,22 +419,21 @@ fn main() -> Result<(), ZfsDiskoError> {
     // };
     // serde_json::to_writer_pretty(std::io::stdout(), &zfs_spec)?;
 
-    let zfs_list_output: ZfsListOutput = if let Some(file) = cli.source.file {
+    let zfs_list_output: ZfsList = if let Some(file) = cli.source.file {
         let file = File::open(file).map_err(ZfsDiskoError::ZFSOutputNotFound)?;
-        ZfsListOutput::from_reader(file).map_err(ZfsDiskoError::InvalidZFSOutput)?
+        ZfsList::from_reader(file).map_err(ZfsDiskoError::InvalidZFSOutput)?
     } else {
-        ZfsListOutput::from_command::<Vec<_>, String>(None)
-            .map_err(ZfsDiskoError::ZFSCommandFailed)?
+        ZfsList::from_command::<Vec<_>, String>(None).map_err(ZfsDiskoError::ZFSCommandFailed)?
     };
 
     let zfs_spec = {
         let file = File::open(cli.spec).map_err(ZfsDiskoError::SpecNotFound)?;
-        ZfsSpec::from_reader(file).map_err(ZfsDiskoError::InvalidSpec)?
+        ZfsSpecification::from_reader(file).map_err(ZfsDiskoError::InvalidSpec)?
     };
 
     let mut ap = VecActionProducer::new();
 
-    eval_spec(&mut ap, &zfs_list_output, &zfs_spec);
+    eval_spec(&mut ap, &zfs_list_output.into_specification(), &zfs_spec);
 
     let (actions, errors) = ap.finalize();
     let commands = actions.to_commands();
