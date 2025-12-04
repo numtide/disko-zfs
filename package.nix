@@ -8,7 +8,14 @@ rustPlatform.buildRustPackage (finalAttrs: {
   pname = "disko-zfs";
   version = "unknown";
 
-  src = ./.;
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./src
+      ./Cargo.toml
+      ./Cargo.lock
+    ];
+  };
 
   buildType = "debug";
 
