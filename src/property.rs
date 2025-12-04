@@ -12,16 +12,30 @@ pub enum PropertySource {
     #[serde(rename(deserialize = "DEFAULT"))]
     Default { data: String },
     #[serde(rename(deserialize = "TEMPORARY"))]
-    TEMPORARY { data: String },
+    Temporary { data: String },
+    #[serde(rename(deserialize = "RECEIVED"))]
+    Received { data: String },
 }
 
 impl PropertySource {
+    pub fn is_local(&self) -> bool {
+        match self {
+            PropertySource::Local { .. } => true,
+            PropertySource::Received { .. }
+            | PropertySource::Temporary { .. }
+            | PropertySource::None { .. }
+            | PropertySource::Inherited { .. }
+            | PropertySource::Default { .. } => false,
+        }
+    }
     pub fn user_managed(&self) -> bool {
         match self {
             PropertySource::Local { .. }
             | PropertySource::Inherited { .. }
             | PropertySource::Default { .. } => true,
-            PropertySource::TEMPORARY { .. } | PropertySource::None { .. } => false,
+            PropertySource::Received { .. }
+            | PropertySource::Temporary { .. }
+            | PropertySource::None { .. } => false,
         }
     }
 }
