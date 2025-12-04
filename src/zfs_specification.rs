@@ -11,7 +11,7 @@ pub struct Property {
     pub source: Option<PropertySource>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct ZfsSpecificationDataset {
     pub properties: HashMap<String, Property>,
 }

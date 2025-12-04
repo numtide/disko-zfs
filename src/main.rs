@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
+    iter::Filter,
     path::PathBuf,
     process::Command,
     str::{FromStr, MatchIndices},
@@ -35,7 +36,7 @@ use clap::Parser as _;
 use crate::{
     property::{PropertySource, PropertyValue},
     zfs_list_output::{SpecificationFilter, ZfsList},
-    zfs_specification::ZfsSpecification,
+    zfs_specification::{ZfsSpecification, ZfsSpecificationDataset},
 };
 mod property;
 mod zfs_list_output;
@@ -262,19 +263,48 @@ where
             .unwrap_or(false)
 }
 
+macro_rules! filter_by_pats {
+    ( $iterator:expr, $pats:expr ) => {
+        $iterator.filter(|(key, _)| $pats.iter().all(|pat| !pat.matches(key)))
+    };
+}
+
 fn eval_spec<AP>(
     action_producer: &mut AP,
-    actual: &ZfsSpecification,
-    desired: &ZfsSpecification,
+    actual: ZfsSpecification,
+    desired: ZfsSpecification,
     ignored_datasets: &Vec<Pattern>,
+    ignored_properties: &Vec<Pattern>,
 ) where
     AP: ActionProducer,
 {
-    let mut desired_datasets = desired
-        .datasets
-        .iter()
-        .filter(|(key, _)| ignored_datasets.iter().all(|pat| !pat.matches(key)))
-        .collect::<Vec<_>>();
+    fn filter_spec(
+        spec: ZfsSpecification,
+        ignored_datasets: &Vec<Pattern>,
+        ignored_properties: &Vec<Pattern>,
+    ) -> ZfsSpecification {
+        ZfsSpecification {
+            datasets: filter_by_pats!(spec.datasets.into_iter(), ignored_datasets)
+                .map(|(k, v)| {
+                    (
+                        k,
+                        ZfsSpecificationDataset {
+                            properties: filter_by_pats!(
+                                v.properties.into_iter(),
+                                ignored_properties
+                            )
+                            .collect::<HashMap<_, _>>(),
+                        },
+                    )
+                })
+                .collect::<HashMap<_, _>>(),
+        }
+    }
+
+    let actual = filter_spec(actual, ignored_datasets, ignored_properties);
+    let desired = filter_spec(desired, ignored_datasets, ignored_properties);
+
+    let mut desired_datasets = desired.datasets.iter().collect::<Vec<_>>();
     desired_datasets.sort_by_key(|(key, _)| key.len());
 
     for (dataset_name, desired_dataset) in desired_datasets {
@@ -420,11 +450,7 @@ fn eval_spec<AP>(
         }
     }
 
-    for (dataset_name, actual_dataset) in actual
-        .datasets
-        .iter()
-        .filter(|(key, _)| ignored_datasets.iter().all(|pat| !pat.matches(key)))
-    {
+    for (dataset_name, actual_dataset) in &actual.datasets {
         match desired.datasets.get(dataset_name) {
             Some(desired_dataset) => {
                 let mut inherited_properties: Vec<String> = Vec::new();
@@ -475,8 +501,10 @@ struct Cli {
     source: Source,
     #[arg(long = "log-level")]
     log_level: Option<Level>,
-    #[arg(short = 'i', long = "ignored-dataset")]
-    ignored_dataset: Vec<Pattern>,
+    #[arg(long = "ignored-dataset")]
+    ignored_datasets: Vec<Pattern>,
+    #[arg(long = "ignored-property")]
+    ignored_properties: Vec<Pattern>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -513,6 +541,7 @@ fn get_actions(
     specification_file: &PathBuf,
     zfs_list_output: ZfsList,
     ignored_datasets: &Vec<Pattern>,
+    ignored_properties: &Vec<Pattern>,
 ) -> Result<ActionSet, ZfsDiskoError> {
     let zfs_specification = {
         let file = File::open(specification_file).map_err(ZfsDiskoError::SpecNotFound)?;
@@ -523,9 +552,10 @@ fn get_actions(
 
     eval_spec(
         &mut ap,
-        &zfs_list_output.into_specification(&Default::default()),
-        &zfs_specification,
+        zfs_list_output.into_specification(&Default::default()),
+        zfs_specification,
         &ignored_datasets,
+        &ignored_properties,
     );
 
     let (actions, errors) = ap.finalize();
@@ -576,7 +606,12 @@ fn main() -> Result<(), ZfsDiskoError> {
 
     match cli.command {
         Commands::Plan { spec, output } => {
-            let actions = get_actions(&spec, zfs_list_output, &cli.ignored_dataset)?;
+            let actions = get_actions(
+                &spec,
+                zfs_list_output,
+                &cli.ignored_datasets,
+                &cli.ignored_properties,
+            )?;
 
             let (mut output, prefix): (Box<dyn Write>, String) = if let Some(output) = output {
                 (
@@ -604,7 +639,12 @@ fn main() -> Result<(), ZfsDiskoError> {
             Ok(())
         }
         Commands::Apply { spec } => {
-            let actions = get_actions(&spec, zfs_list_output, &cli.ignored_dataset)?;
+            let actions = get_actions(
+                &spec,
+                zfs_list_output,
+                &cli.ignored_datasets,
+                &cli.ignored_properties,
+            )?;
 
             writeln!(stdout, "# !! Destructive Commands !!")
                 .map_err(ZfsDiskoError::WriteStdoutFailed)?;
