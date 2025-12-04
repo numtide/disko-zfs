@@ -40,7 +40,7 @@
         };
 
         rootFsOptions = {
-          xattr = "sa";
+          xattr = "on";
           recordsize = "128K";
           compression = "zstd-2";
           atime = "off";

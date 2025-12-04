@@ -15,14 +15,27 @@ in
 
     package = lib.mkPackageOption pkgs "disko-zfs" { };
 
-    settings.datasets = lib.mkOption {
-      type = lib.types.lazyAttrsOf (
-        (lib.types.submodule {
-          options.properties = lib.mkOption {
-            type = lib.types.attrsOf (lib.types.either lib.types.int lib.types.str);
-          };
-        })
-      );
+    settings = {
+      logLevel = lib.mkOption {
+        type = lib.types.enum [
+          "error"
+          "warn"
+          "info"
+          "debug"
+          "trace"
+        ];
+        default = "info";
+      };
+
+      datasets = lib.mkOption {
+        type = lib.types.lazyAttrsOf (
+          (lib.types.submodule {
+            options.properties = lib.mkOption {
+              type = lib.types.attrsOf (lib.types.either lib.types.int lib.types.str);
+            };
+          })
+        );
+      };
     };
   };
 
@@ -51,7 +64,10 @@ in
 
           script = ''
             export PATH="$PATH:/run/booted-system/sw/bin"
-            ${lib.getExe cfg.package} apply --spec ${configFile}
+            ${lib.getExe cfg.package} \
+              --log-level ${cfg.settings.logLevel} \
+                apply \
+                --spec ${configFile}
           '';
         };
       }

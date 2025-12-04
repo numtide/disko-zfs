@@ -50,19 +50,45 @@ enum ZfsAction {
         dataset: String,
         properties: HashMap<String, PropertyValue>,
     },
+    InheritProperties {
+        dataset: String,
+        properties: Vec<String>,
+    },
 }
 
 #[derive(Debug)]
-struct ActionSet(Vec<ZfsAction>);
+enum DestructiveAction {
+    DestroyDataset { name: String },
+}
+
+#[derive(Debug)]
+struct ActionSet {
+    additive: Vec<ZfsAction>,
+    destrictive: Vec<DestructiveAction>,
+}
 
 impl ActionSet {
-    pub fn to_commands(&self) -> Vec<Vec<String>> {
-        self.0
+    pub fn to_destructive_commands(&self) -> Vec<Vec<String>> {
+        self.destrictive
+            .iter()
+            .map(|action| match action {
+                DestructiveAction::DestroyDataset { name } => {
+                    let mut output = Vec::with_capacity(3);
+                    output.extend_from_slice(&["zfs", "destroy"].map(ToOwned::to_owned));
+                    output.push(name.clone());
+                    output
+                }
+            })
+            .collect()
+    }
+
+    pub fn to_additive_commands(&self) -> Vec<Vec<String>> {
+        self.additive
             .iter()
             .map(|action| match action {
                 ZfsAction::CreateDataset { name, properties } => {
                     let mut output = Vec::with_capacity(3 + properties.len());
-                    output.extend_from_slice(&["zfs", "create"].map(|x| x.to_owned()));
+                    output.extend_from_slice(&["zfs", "create"].map(ToOwned::to_owned));
                     output.extend(
                         properties
                             .iter()
@@ -75,12 +101,21 @@ impl ActionSet {
                     dataset,
                     properties,
                 } => {
-                    let mut vec = vec!["zfs".to_owned(), "set".to_owned()];
+                    let mut vec = Vec::from(["zfs", "set"].map(ToOwned::to_owned));
                     vec.extend(
                         properties
                             .into_iter()
                             .map(|(name, value)| format!("{}={}", name, value.to_string())),
                     );
+                    vec.push(dataset.to_owned());
+                    vec
+                }
+                ZfsAction::InheritProperties {
+                    dataset,
+                    properties,
+                } => {
+                    let mut vec = Vec::from(["zfs", "inherit"].map(ToOwned::to_owned));
+                    vec.extend(properties.into_iter().map(|s| s.clone()));
                     vec.push(dataset.to_owned());
                     vec
                 }
@@ -92,6 +127,7 @@ impl ActionSet {
 #[derive(Debug)]
 struct VecActionProducer {
     actions: Vec<ZfsAction>,
+    destructive_actions: Vec<DestructiveAction>,
     errors: Vec<String>,
 }
 
@@ -99,6 +135,7 @@ impl VecActionProducer {
     fn new() -> VecActionProducer {
         VecActionProducer {
             actions: Vec::new(),
+            destructive_actions: Vec::new(),
             errors: Vec::new(),
         }
     }
@@ -163,7 +200,9 @@ impl VecActionProducer {
                         [action].into_iter().collect()
                     }
                 }
-                ZfsAction::SetProperties { .. } => [action].into_iter().collect(),
+                ZfsAction::SetProperties { .. } | ZfsAction::InheritProperties { .. } => {
+                    [action].into_iter().collect()
+                }
             })
             .collect::<Vec<_>>()
     }
@@ -174,13 +213,23 @@ impl VecActionProducer {
 
     fn finalize(mut self) -> (ActionSet, Vec<String>) {
         self.cleanup();
-        (ActionSet(self.actions), self.errors)
+        (
+            ActionSet {
+                additive: self.actions,
+                destrictive: self.destructive_actions,
+            },
+            self.errors,
+        )
     }
 }
 
 impl ActionProducer for VecActionProducer {
     fn produce_action(&mut self, action: ZfsAction) {
         self.actions.push(action)
+    }
+
+    fn produce_destructive_action(&mut self, action: DestructiveAction) {
+        self.destructive_actions.push(action)
     }
 
     fn produce_error(&mut self, error: String) {
@@ -190,6 +239,7 @@ impl ActionProducer for VecActionProducer {
 
 trait ActionProducer {
     fn produce_action(&mut self, action: ZfsAction);
+    fn produce_destructive_action(&mut self, action: DestructiveAction);
     fn produce_error(&mut self, error: String);
 }
 
@@ -211,38 +261,38 @@ where
             .unwrap_or(false)
 }
 
-fn eval_spec<AP>(action_producer: &mut AP, current: &ZfsSpecification, desired: &ZfsSpecification)
+fn eval_spec<AP>(action_producer: &mut AP, actual: &ZfsSpecification, desired: &ZfsSpecification)
 where
     AP: ActionProducer,
 {
-    let mut datasets = desired.datasets.iter().collect::<Vec<_>>();
-    datasets.sort_by_key(|(key, _)| key.len());
+    let mut desired_datasets = desired.datasets.iter().collect::<Vec<_>>();
+    desired_datasets.sort_by_key(|(key, _)| key.len());
 
-    for (name, dataset) in datasets {
-        if let Some(dataset_state) = current.get_dataset(name) {
-            log::trace!("dataset {} already exists", name);
+    for (dataset_name, desired_dataset) in desired_datasets {
+        if let Some(actual_dataset) = actual.get_dataset(dataset_name) {
+            log::trace!("dataset {} already exists", dataset_name);
 
             let mut properties = HashMap::new();
 
-            for (property, value) in &dataset.properties {
-                if let Some(property_state) = dataset_state.get_property(property) {
-                    if property_state
+            for (desired_property_name, desired_property) in &desired_dataset.properties {
+                if let Some(actual_property) = actual_dataset.get_property(desired_property_name) {
+                    if actual_property
                         .source
                         .as_ref()
                         .map(|p| p.user_managed())
                         .unwrap_or(false)
                     {
-                        if property_state.value != value.value {
-                            match (&property_state.value, &value.value) {
+                        if actual_property.value != desired_property.value {
+                            match (&actual_property.value, &desired_property.value) {
                                 (PropertyValue::String(str), PropertyValue::Integer(int))
                                     if is_k_syntax(str, &int) =>
                                 {
                                     log::trace!(
                                         "dataset {} property {} set to {}, guessing to be equal to {}, skip",
-                                        name,
-                                        property,
-                                        property_state.value.to_string(),
-                                        value.value.to_string()
+                                        dataset_name,
+                                        desired_property_name,
+                                        actual_property.value.to_string(),
+                                        desired_property.value.to_string()
                                     );
                                 }
                                 (PropertyValue::Integer(int), PropertyValue::String(str))
@@ -250,52 +300,62 @@ where
                                 {
                                     log::trace!(
                                         "dataset {} property {} set to {}, guessing to be equal to {}, skip",
-                                        name,
-                                        property,
-                                        property_state.value.to_string(),
-                                        value.value.to_string()
+                                        dataset_name,
+                                        desired_property_name,
+                                        actual_property.value.to_string(),
+                                        desired_property.value.to_string()
                                     );
                                 }
                                 _ => {
                                     log::trace!(
                                         "dataset {} property {} set to {}, modify to {}",
-                                        name,
-                                        property,
-                                        property_state.value.to_string(),
-                                        value.value.to_string()
+                                        dataset_name,
+                                        desired_property_name,
+                                        actual_property.value.to_string(),
+                                        desired_property.value.to_string()
                                     );
-                                    properties.insert(property.to_owned(), value.to_owned());
+                                    properties.insert(
+                                        desired_property_name.to_owned(),
+                                        desired_property.to_owned(),
+                                    );
                                 }
                             }
                         } else {
                             log::trace!(
                                 "dataset {} property {} already set to {}, skip",
-                                name,
-                                property,
-                                value.value.to_string()
+                                dataset_name,
+                                desired_property_name,
+                                desired_property.value.to_string()
                             );
                         }
                     } else {
-                        log::trace!("dataset {} property {} not normal, error", name, property,);
+                        log::trace!(
+                            "dataset {} property {} not normal, error",
+                            dataset_name,
+                            desired_property_name,
+                        );
                         action_producer.produce_error(format!(
                             "cannot set property {} of dataset {} because source is {:?}",
-                            property, name, property_state.source
+                            desired_property_name, dataset_name, actual_property.source
                         ))
                     }
                 } else {
                     log::trace!(
                         "dataset {} property {} not set, set to {}",
-                        name,
-                        property,
-                        value.value.to_string(),
+                        dataset_name,
+                        desired_property_name,
+                        desired_property.value.to_string(),
                     );
-                    properties.insert(property.to_owned(), value.to_owned());
+                    properties.insert(
+                        desired_property_name.to_owned(),
+                        desired_property.to_owned(),
+                    );
                 }
             }
 
             if !properties.is_empty() {
                 action_producer.produce_action(ZfsAction::SetProperties {
-                    dataset: name.to_owned(),
+                    dataset: dataset_name.to_owned(),
                     properties: properties
                         .into_iter()
                         .map(|(k, v)| (k, v.value))
@@ -303,7 +363,7 @@ where
                 })
             }
         } else {
-            log::trace!("prepare dataset {}", name);
+            log::trace!("prepare dataset {}", dataset_name);
 
             struct PrefixPaths<'a>(&'a str, MatchIndices<'a, char>);
 
@@ -321,8 +381,8 @@ where
                 }
             }
 
-            for dataset_part in PrefixPaths::new(&name) {
-                if current.get_dataset(dataset_part).is_none() {
+            for dataset_part in PrefixPaths::new(&dataset_name) {
+                if actual.get_dataset(dataset_part).is_none() {
                     log::trace!("create parent dataset {}", dataset_part);
                     action_producer.produce_action(ZfsAction::CreateDataset {
                         name: dataset_part.to_owned(),
@@ -332,8 +392,8 @@ where
             }
             log::trace!(
                 "create dataset {} with properties {}",
-                name,
-                dataset
+                dataset_name,
+                desired_dataset
                     .properties
                     .iter()
                     .map(|(name, value)| format!("{}={}", name, value.value.to_string()))
@@ -341,13 +401,50 @@ where
                     .join(" ")
             );
             action_producer.produce_action(ZfsAction::CreateDataset {
-                name: name.to_owned(),
-                properties: dataset
+                name: dataset_name.to_owned(),
+                properties: desired_dataset
                     .properties
                     .iter()
                     .map(|(k, v)| (k.clone(), v.value.clone()))
                     .collect::<HashMap<_, _>>(),
             })
+        }
+    }
+
+    for (dataset_name, actual_dataset) in &actual.datasets {
+        match desired.datasets.get(dataset_name) {
+            Some(desired_dataset) => {
+                let mut inherited_properties: Vec<String> = Vec::new();
+
+                for (property_name, actual_property) in &actual_dataset.properties {
+                    if actual_property
+                        .source
+                        .as_ref()
+                        .map_or(false, |source| source.is_local())
+                        && desired_dataset.properties.get(property_name).is_none()
+                    {
+                        log::trace!(
+                            "dataset {} inherit property {}",
+                            dataset_name,
+                            property_name
+                        );
+                        inherited_properties.push(property_name.clone())
+                    }
+                }
+
+                if !inherited_properties.is_empty() {
+                    action_producer.produce_action(ZfsAction::InheritProperties {
+                        dataset: dataset_name.clone(),
+                        properties: inherited_properties,
+                    })
+                }
+            }
+            None => {
+                log::trace!("destroy dataset {}", dataset_name);
+                action_producer.produce_destructive_action(DestructiveAction::DestroyDataset {
+                    name: dataset_name.clone(),
+                })
+            }
         }
     }
 }
@@ -400,7 +497,7 @@ enum Commands {
 fn get_actions(
     specification_file: &PathBuf,
     zfs_list_output: ZfsList,
-) -> Result<Vec<Vec<String>>, ZfsDiskoError> {
+) -> Result<ActionSet, ZfsDiskoError> {
     let zfs_specification = {
         let file = File::open(specification_file).map_err(ZfsDiskoError::SpecNotFound)?;
         ZfsSpecification::from_reader(file).map_err(ZfsDiskoError::InvalidSpec)?
@@ -420,10 +517,12 @@ fn get_actions(
         log::error!("{}", error)
     }
 
-    Ok(actions.to_commands())
+    Ok(actions)
 }
 
 fn main() -> Result<(), ZfsDiskoError> {
+    let mut stdout = std::io::stdout();
+
     let cli = Cli::parse();
 
     simple_logger::init_with_level(
@@ -444,29 +543,60 @@ fn main() -> Result<(), ZfsDiskoError> {
         ZfsList::from_command::<Vec<_>, String>(None).map_err(ZfsDiskoError::ZFSCommandFailed)?
     };
 
+    fn write_command<W, S>(
+        output: &mut W,
+        prefix: S,
+        command: Vec<String>,
+    ) -> Result<(), ZfsDiskoError>
+    where
+        W: Write,
+        S: AsRef<str>,
+    {
+        write!(output, "{}{}\n", prefix.as_ref(), command.join(" "))
+            .map_err(ZfsDiskoError::WriteStdoutFailed)?;
+        Ok(())
+    }
+
     match cli.command {
         Commands::Plan { spec, output } => {
-            let action_commands = get_actions(&spec, zfs_list_output)?;
+            let actions = get_actions(&spec, zfs_list_output)?;
 
-            if let Some(output) = output {
-                let mut output = File::create(output).map_err(ZfsDiskoError::WriteStdoutFailed)?;
-
-                for command in action_commands {
-                    write!(&mut output, "{}\n", command.join(" "))
-                        .map_err(ZfsDiskoError::WriteStdoutFailed)?;
-                }
+            let (mut output, prefix): (Box<dyn Write>, String) = if let Some(output) = output {
+                (
+                    Box::new(File::create(output).map_err(ZfsDiskoError::WriteStdoutFailed)?),
+                    "".to_string(),
+                )
             } else {
-                for command in action_commands {
-                    println!("> {}", command.join(" "))
-                }
+                (Box::new(stdout), "> ".to_string())
+            };
+
+            writeln!(&mut output, "# Additive Commands")
+                .map_err(ZfsDiskoError::WriteStdoutFailed)?;
+
+            for command in actions.to_additive_commands() {
+                write_command(&mut output, &prefix, command)?;
+            }
+
+            writeln!(&mut output, "# !! Destructive Commands !!")
+                .map_err(ZfsDiskoError::WriteStdoutFailed)?;
+
+            for command in actions.to_destructive_commands() {
+                write_command(&mut output, &prefix, command)?;
             }
 
             Ok(())
         }
         Commands::Apply { spec } => {
-            let action_commands = get_actions(&spec, zfs_list_output)?;
+            let actions = get_actions(&spec, zfs_list_output)?;
 
-            for command in action_commands {
+            writeln!(stdout, "# !! Destructive Commands !!")
+                .map_err(ZfsDiskoError::WriteStdoutFailed)?;
+
+            for command in actions.to_destructive_commands() {
+                write_command(&mut stdout, "> ", command)?;
+            }
+
+            for command in actions.to_additive_commands() {
                 println!("+ {}", &command.join(" "));
                 Command::new(&command[0])
                     .args(&command[1..])
@@ -499,16 +629,15 @@ fn main() -> Result<(), ZfsDiskoError> {
 
             match format {
                 CommandShowFormat::Json => {
-                    serde_json::to_writer_pretty(std::io::stdout(), &current_spec)
+                    serde_json::to_writer_pretty(&mut stdout, &current_spec)
                         .map_err(ZfsDiskoError::SeriliazationJSONCurrentSpecFailed)?;
-                    write!(std::io::stdout(), "\n").map_err(ZfsDiskoError::WriteStdoutFailed)?;
+                    write!(stdout, "\n").map_err(ZfsDiskoError::WriteStdoutFailed)?;
                 }
                 CommandShowFormat::Nix => {
                     let nix_data = ser_nix::to_string(&current_spec)
                         .map_err(ZfsDiskoError::SeriliazationNixCurrentSpecFailed)?;
 
-                    write!(std::io::stdout(), "{}\n", nix_data)
-                        .map_err(ZfsDiskoError::WriteStdoutFailed)?;
+                    write!(stdout, "{}\n", nix_data).map_err(ZfsDiskoError::WriteStdoutFailed)?;
                 }
             }
 

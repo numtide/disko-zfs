@@ -37,7 +37,10 @@ in
 
           disko.zfs = {
             enable = true;
-            settings = diskoZfs;
+            settings = lib.mkMerge [
+              diskoZfs
+              { logLevel = "trace"; }
+            ];
           };
 
           networking.hostId = "deadbeef";
