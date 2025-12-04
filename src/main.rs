@@ -392,6 +392,8 @@ enum Commands {
         format: CommandShowFormat,
         #[arg(short = 'p', long = "property")]
         properties: Vec<String>,
+        #[arg(short = 'l', long = "local")]
+        local: bool,
     },
 }
 
@@ -474,7 +476,11 @@ fn main() -> Result<(), ZfsDiskoError> {
 
             Ok(())
         }
-        Commands::Show { format, properties } => {
+        Commands::Show {
+            format,
+            properties,
+            local,
+        } => {
             let maybe_properties = if properties.is_empty() {
                 None
             } else {
@@ -484,7 +490,11 @@ fn main() -> Result<(), ZfsDiskoError> {
                 fn(&PropertySource) -> bool,
             > {
                 properties: maybe_properties,
-                property_sources: Some(|p| p.user_managed()),
+                property_sources: Some(if local {
+                    |p| p.is_local()
+                } else {
+                    |p| p.user_managed()
+                }),
             });
 
             match format {
