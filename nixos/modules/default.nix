@@ -18,7 +18,13 @@ let
 in
 {
   options.disko.zfs = {
-    enable = lib.mkEnableOption "Enable declarative ZFS dataset management";
+    enable = lib.mkEnableOption ''
+      Enable declarative ZFS dataset management
+
+      Along with a `disko-zfs` service this option will add a activation script
+      which only runs during dry activation. When executed it will display the
+      changes `disko-zfs` would make.
+    '';
 
     package = lib.mkPackageOption pkgs "disko-zfs" { };
 
@@ -32,16 +38,35 @@ in
           "trace"
         ];
         default = "info";
+        description = ''
+          Log level to run `disko-zfs` with. If set to `trace`, `disko-zfs` will
+          very verbosely explain all decisions it's making and why. If you're trying
+          to understand a change it wants to make, try this option.
+        '';
       };
 
       ignoredDatasets = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
+        description = ''
+          Datasets to ignore, supports shell style globs. When a dataset is ignored,
+          `disko-zfs` will neither create it nor suggent its destruction.
+        '';
+        example = ''
+          ["zroot/root/persist/*"]
+        '';
       };
 
       ignoredProperties = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
+        description = ''
+          Properties to ignore, supports shell style globs. When a property is ignored,
+          `disko-zfs` will not set it or unset it.
+        '';
+        example = ''
+          ["com.sun:auto-snapshot"]
+        '';
       };
 
       datasets = lib.mkOption {
@@ -50,9 +75,15 @@ in
             options.properties = lib.mkOption {
               type = lib.types.attrsOf (lib.types.either lib.types.int lib.types.str);
               default = { };
+              description = ''
+                Properties that this dataset should have.
+              '';
             };
           })
         );
+        description = ''
+          Declaration of datasets that should exist on this system.
+        '';
       };
     };
   };
