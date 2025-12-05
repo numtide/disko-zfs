@@ -27,16 +27,14 @@ in
         default = "info";
       };
 
-      ignored = {
-        datasets = lib.mkOption {
-          type = lib.types.listOf lib.types.str;
-          default = [ ];
-        };
+      ignoredDatasets = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+      };
 
-        properties = lib.mkOption {
-          type = lib.types.listOf lib.types.str;
-          default = [ ];
-        };
+      ignoredProperties = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
       };
 
       datasets = lib.mkOption {
@@ -78,14 +76,6 @@ in
           script = ''
             export PATH="$PATH:/run/booted-system/sw/bin"
             ${lib.getExe cfg.package} \
-              ${
-                lib.concatMapStringsSep " " (dataset: "--ignored-dataset ${dataset}") cfg.settings.ignored.datasets
-              } \
-              ${
-                lib.concatMapStringsSep " " (
-                  property: "--ignored-property ${property}"
-                ) cfg.settings.ignored.properties
-              } \
               --log-level ${cfg.settings.logLevel} \
                 apply \
                 --spec ${configFile}

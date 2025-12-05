@@ -5,8 +5,8 @@
   };
 
   diskoZfs = {
-    ignored.datasets = [ "zroot/ds1/persist/postgresql" ];
-    ignored.properties = [
+    ignoredDatasets = [ "zroot/ds1/persist/postgresql" ];
+    ignoredProperties = [
       ":test-add"
       ":test-remove"
     ];

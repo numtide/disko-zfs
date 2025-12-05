@@ -145,6 +145,8 @@ impl ZfsList {
                     )
                 })
                 .collect::<HashMap<_, _>>(),
+            ignored_datasets: Vec::new(),
+            ignored_properties: Vec::new(),
         }
     }
 }

@@ -1,3 +1,4 @@
+use glob::Pattern;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, io::Read};
 
@@ -12,6 +13,33 @@ pub struct Property {
     pub value: PropertyValue,
     #[serde(skip)]
     pub source: Option<PropertySource>,
+}
+
+mod serde_pattern {
+    use glob::Pattern;
+    use serde::{Deserialize, Deserializer, Serializer, de, ser::SerializeSeq as _};
+
+    pub fn serialize<S>(value: &Vec<Pattern>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = ser.serialize_seq(Some(value.len()))?;
+        for pat in value {
+            seq.serialize_element(pat.as_str())?;
+        }
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Vec<Pattern>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::<String>::deserialize(de)?
+            .into_iter()
+            .map(|v| Pattern::new(&v))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| de::Error::custom(err.to_string()))
+    }
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -51,6 +79,10 @@ impl ZfsSpecificationDataset {
 #[derive(Deserialize, Serialize)]
 pub struct ZfsSpecification {
     pub datasets: HashMap<String, ZfsSpecificationDataset>,
+    #[serde(with = "serde_pattern", alias = "ignoredDatasets")]
+    pub ignored_datasets: Vec<Pattern>,
+    #[serde(with = "serde_pattern", alias = "ignoredProperties")]
+    pub ignored_properties: Vec<Pattern>,
 }
 
 impl ZfsSpecification {
