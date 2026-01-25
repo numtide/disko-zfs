@@ -23,7 +23,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   meta = {
     description = "Declarative ZFS dataset management.";
-    homepage = "https://git.numtide.com/magic_rb/disko-zfs";
+    homepage = "https://github.com/numtide/disko-zfs";
     license = lib.licenses.gpl3;
     maintainers = [ ];
     mainProgram = "disko-zfs";

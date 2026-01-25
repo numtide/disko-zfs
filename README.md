@@ -11,7 +11,7 @@ inputs = {
   # other inputs ...
 
   disko-zfs = {
-    url = "https://git.numtide.com/magic_rb/disko-zfs/archive/main.tar.gz";
+    url = "github:numtide/disko-zfs";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.flake-parts.follows = "flake-parts";
     inputs.disko.follows = "disko";
@@ -26,7 +26,7 @@ Next you need to add the `diskoZfs` module to your NixOS configuration, how spef
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";
 
-    disko-zfs.url = "https://git.numtide.com/magic_rb/disko-zfs/archive/main.tar.gz";
+    disko-zfs.url = "github:numtide/disko-zfs";
   };
 
   outputs = { nixpkgs, disko-zfs, ...}:
