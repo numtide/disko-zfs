@@ -75,14 +75,14 @@ Now, when you switch your machine to this configuration, `disko-zfs` will ensure
 
 ## Disko + `disko-zfs`
 
-If you also utilize [Disko](https://github.com/nix-community/disko) in your NixOS configuration, `disko-zfs` will detect this and automatically include ZFS pools and datasets declared through Disko in its own configuration. AS such if you have Disko, you should prefer Disko's way of declaring ZFS datasets and pools. See the [ZFS Disko example](https://github.com/nix-community/disko/blob/master/example/zfs.nix) to get an idea of how to do this.
+If you also utilize [Disko](https://github.com/nix-community/disko) in your NixOS configuration, `disko-zfs` will detect this and automatically include ZFS pools and datasets declared through Disko in its own configuration. As such if you have Disko, you should prefer Disko's way of declaring ZFS datasets and pools. See the [ZFS Disko example](https://github.com/nix-community/disko/blob/master/example/zfs.nix) to get an idea of how to do this.
 
 ## Dry Running `disko-zfs`
 
-As a specialty `disko-zfs` adds a activation script which only executes during dry activation, which will print out the command `disko-zfs` would run if you were to switch to that NixOS configuration. As such if you run:
+As a specialty `disko-zfs` adds an activation script which only executes during dry activation, which will print out the command `disko-zfs` would run if you were to switch to that NixOS configuration. As such if you run:
 
 ```
-nixos-rebuild --flake .#default --sudo dry-activate
+nixos-rebuild --flake .#<hostname> --sudo dry-activate
 ```
 
 `disko-zfs` will let you know what it would do.
