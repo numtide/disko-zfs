@@ -69,6 +69,23 @@ in
         '';
       };
 
+      ignoredDependencies = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "/" "/nix" "/tmp" "/boot" ];
+        description = ''
+          We run disko-zfs before mounting any legacy zfs partitions, except for those mounted at the following paths. This can be used for instance if a partition contains a key for another zfs partition, but also make sure to add the dependency with something like:
+          ```
+          systemd.services."disko-zfs" = {
+            after = [ "my-key-folder.mount" ];
+            wants = [ "my-key-folder.mount" ];
+          }
+          ```
+        '';
+        example = ''
+          [ "/" "/nix" "/tmp" "/boot" "/myfolder/containing/zfs/key"]
+        '';
+      };
+      
       datasets = lib.mkOption {
         type = lib.types.lazyAttrsOf (
           (lib.types.submodule {
@@ -95,27 +112,53 @@ in
           inputs.self.overlays.default
         ];
 
-        systemd.services."disko-zfs" = {
-          unitConfig.DefaultDependencies = false;
-          requiredBy = [
-            "local-fs.target"
-            "zfs-mount.service"
-          ];
-          before = [
-            "local-fs.target"
-            "zfs-mount.service"
-          ];
-          after = [
-            "zfs-import.target"
-          ];
+        systemd.services."disko-zfs" =
+          let
+            # Compute all services to start after disko-zfs (zfs-mount.service only deals with non-legacy mount points)
+            deps = (lib.pipe config.disko.devices.zpool [
+              (lib.mapAttrsToList (n: v: lib.nameValuePair n v.datasets))
+              (lib.map (
+                { name, value }:
+                lib.mapAttrsToList (
+                  dataset: settings: (if settings.options.mountpoint == "legacy" || false then settings.mountpoint or "" else "")
+                ) (lib.filterAttrs (name: attr: name != "__root") value)
+              ))
+              lib.flatten
+              # Some partitions may be mounted. sure what happens if we add these repositories in a ZFS
+              (lib.filter (x: x != "" && builtins.elem x cfg.settings.ignoredDependencies == false))
+              # Turn / into -
+              (lib.map (x: (builtins.replaceStrings ["/"] ["-"] x) + ".mount"))
+              # Removes the leading -
+              (lib.map (x: builtins.elemAt (builtins.match "^-(.*)$" x) 0))
+            ]);
+          in
+            {
+              unitConfig.DefaultDependencies = false;
+              # Don't use requiredBy otherwise adding a new dataset will unmount all filesystems...
+              # But anyway it will most of the time do it since adding a disko datasets reload the import for this disk,
+              # which unmounts it.
+              wantedBy = [
+                "local-fs.target"
+                "zfs-mount.service"
+              ] ++ deps;
+              before = [
+                "local-fs.target"
+                "zfs-mount.service"
+              ] ++ deps;
+              after = [
+                "zfs-import.target"
+              ];
 
-          serviceConfig.RemainAfterExit = true;
+              serviceConfig = {
+                Type = "oneshot"; # Make sure to wait for the end of the script before starting to mount other elements
+                RemainAfterExit = true;
+              };
 
-          script = ''
-            export PATH="$PATH:/run/booted-system/sw/bin"
-            ${command "apply"}
-          '';
-        };
+              script = ''
+                export PATH="$PATH:/run/booted-system/sw/bin"
+                ${command "apply"}
+              '';
+            };
 
         system.activationScripts."disko-zfs" = {
           text = ''
