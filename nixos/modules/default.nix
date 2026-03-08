@@ -98,18 +98,21 @@ in
         systemd.services."disko-zfs" = {
           unitConfig.DefaultDependencies = false;
           requiredBy = [
-            "local-fs.target"
+            "local-fs-pre.target"
             "zfs-mount.service"
           ];
           before = [
-            "local-fs.target"
             "zfs-mount.service"
+            "local-fs-pre.target"
           ];
           after = [
             "zfs-import.target"
           ];
 
-          serviceConfig.RemainAfterExit = true;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
 
           script = ''
             export PATH="$PATH:/run/booted-system/sw/bin"
