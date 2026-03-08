@@ -1,5 +1,5 @@
 {
-  diskoConfig = import ../disko.nix;
+  diskoConfig = import ../../disko.nix;
 
   diskoZfs = {
     datasets = {

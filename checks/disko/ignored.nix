@@ -1,6 +1,6 @@
 { lib, ... }:
 {
-  diskoConfig = lib.recursiveUpdate (import ../disko.nix) {
+  diskoConfig = lib.recursiveUpdate (import ../../disko.nix) {
     disko.devices.zpool."zroot".datasets."ds1/persist".options.":test-remove" = "letsgo";
   };
 
