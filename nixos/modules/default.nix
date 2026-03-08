@@ -131,7 +131,7 @@ in
           supportsDryActivation = true;
         };
       }
-      (lib.mkIf (config ? disko) {
+      (lib.mkIf (config.disko or { } ? devices) {
         disko.zfs.settings.datasets = lib.pipe config.disko.devices.zpool [
           (lib.mapAttrsToList (n: v: lib.nameValuePair n v.datasets))
           (lib.map (
