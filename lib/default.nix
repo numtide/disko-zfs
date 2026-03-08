@@ -12,8 +12,9 @@ in
     {
       name,
       pkgs,
-      diskoConfig,
-      diskoZfs ? { },
+      diskoConfig ? { },
+      initialConfig ? { },
+      newConfig ? { },
       extraTestScript ? "",
     }:
     diskoLib.testLib.makeDiskoTest {
@@ -33,12 +34,16 @@ in
         {
           imports = [
             inputs.self.nixosModules.default
+            initialConfig
+            (lib.optionalAttrs (initialConfig.disko or { } ? devices) {
+              # https://github.com/nix-community/disko/blob/master/lib/tests.nix#L168
+              disko.devices = lib.mkForce initialConfig.disko.devices;
+            })
           ];
 
           disko.zfs = {
             enable = true;
             settings = lib.mkMerge [
-              diskoZfs
               { logLevel = "trace"; }
             ];
           };
@@ -47,6 +52,14 @@ in
           boot.kernelPackages = pkgs.linuxKernel.packages.linux_6_12;
           boot.supportedFilesystems = [ "zfs" ];
           boot.initrd.systemd.enable = true;
+
+          specialisation."new".configuration = lib.mkMerge [
+            newConfig
+            (lib.optionalAttrs (newConfig.disko or { } ? devices) {
+              # https://github.com/nix-community/disko/blob/master/lib/tests.nix#L168
+              disko.devices = lib.mkForce newConfig.disko.devices;
+            })
+          ];
         };
 
       extraTestScript = ''
@@ -73,6 +86,9 @@ in
         def assert_zfs_dataset_not_exists(dataset):
           (status, _stdout) = machine.execute(f"zfs list {dataset}")
           assert status != 0, f"{dataset} does exist"
+
+        machine.succeed("/run/current-system/specialisation/new/bin/switch-to-configuration test")
+        machine.succeed("systemctl restart disko-zfs")
 
         ${extraTestScript}
       '';

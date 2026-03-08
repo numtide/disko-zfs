@@ -1,24 +1,32 @@
 { lib, ... }:
 {
-  diskoConfig = lib.recursiveUpdate (import ../../disko.nix) {
+  diskoConfig = import ../disko.nix;
+
+  initialConfig = {
     disko.devices.zpool."zroot".datasets."ds1/persist".options.":test-remove" = "letsgo";
   };
 
-  diskoZfs = {
-    ignoredDatasets = [ "zroot/ds1/persist/postgresql" ];
-    ignoredProperties = [
-      ":test-add"
-      ":test-remove"
-    ];
-
-    datasets = {
-      "zroot/ds1/persist" = {
-        properties = lib.mkForce {
-          ":test-add" = "letsgo";
-          mountpoint = "legacy";
+  newConfig = {
+    disko.zfs.settings = {
+      ignoredDatasets = [ "zroot/ds1/persist/postgresql" ];
+      ignoredProperties = [
+        ":test-add"
+        ":test-remove"
+      ];
+    };
+    disko.devices.zpool."zroot" = {
+      datasets = {
+        "ds1/persist" = {
+          options = lib.mkForce {
+            ":test-add" = "letsgo";
+            mountpoint = "legacy";
+          };
+        };
+        "ds1/persist/postgresql" = {
+          type = "zfs_fs";
+          options.mountpoint = "/var/lib/postgresql";
         };
       };
-      "zroot/ds1/persist/postgresql" = { };
     };
   };
 
