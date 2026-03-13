@@ -1,6 +1,6 @@
 { lib, ... }:
 {
-  diskoConfig = import ../disko.nix;
+  diskoConfig = import ../../disko.nix;
 
   initialConfig = {
     disko.devices.zpool."zroot".datasets."ds1/persist".options.":test-remove" = "letsgo";
