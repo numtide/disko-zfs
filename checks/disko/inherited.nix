@@ -1,10 +1,10 @@
 {
   diskoConfig = import ../../disko.nix;
 
-  diskoZfs = {
-    datasets = {
-      "zroot/ds1" = {
-        properties = {
+  newConfig = {
+    disko.devices.zpool."zroot".datasets = {
+      "ds1" = {
+        options = {
           recordsize = "8k";
         };
       };
