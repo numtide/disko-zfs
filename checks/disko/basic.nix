@@ -1,15 +1,18 @@
 {
   diskoConfig = import ../../disko.nix;
 
-  diskoZfs = {
-    datasets = {
-      "zroot/ds1/persist/postgresql" = {
-        properties = {
+  newConfig = {
+    disko.devices.zpool."zroot".datasets = {
+      "ds1/persist/postgresql" = {
+        type = "zfs_fs";
+        options = {
+          "mountpoint" = "legacy";
           "recordsize" = "8k";
         };
+        mountpoint = "/var/lib/postgresql";
       };
-      "zroot/ds1/root" = {
-        properties = {
+      "ds1/root" = {
+        options = {
           ":disko-zfs" = "activated";
         };
       };
