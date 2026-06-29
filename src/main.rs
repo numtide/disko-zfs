@@ -1,6 +1,6 @@
 use crate::{
     prefix_paths::PrefixPaths,
-    property::{PropertySource, PropertyValue},
+    property::{DatasetType, PropertySource, PropertyValue},
     zfs_list_output::{SpecificationFilter, ZfsList},
     zfs_specification::{ZfsSpecification, ZfsSpecificationDataset},
 };
@@ -41,6 +41,7 @@ pub enum ZfsDiskoError {
 enum ZfsAction {
     CreateDataset {
         name: String,
+        r#type: DatasetType,
         properties: HashMap<String, PropertyValue>,
     },
     SetProperties {
@@ -83,12 +84,26 @@ impl ActionSet {
         self.additive
             .iter()
             .map(|action| match action {
-                ZfsAction::CreateDataset { name, properties } => {
+                ZfsAction::CreateDataset {
+                    name,
+                    r#type,
+                    properties,
+                } => {
                     let mut output = Vec::with_capacity(3 + properties.len());
                     output.extend_from_slice(&["zfs", "create"].map(ToOwned::to_owned));
+                    match r#type {
+                        DatasetType::FileSystem => {}
+                        DatasetType::Volume => output.extend([
+                            "-V".to_owned(),
+                            properties.get("volsize").unwrap().to_string(),
+                        ]),
+                    }
                     output.extend(
                         properties
                             .iter()
+                            .filter(|(name, _)| {
+                                *r#type == DatasetType::FileSystem || name.as_str() != "volsize"
+                            })
                             .map(|(name, value)| format!("-o{}={}", name, value.to_string())),
                     );
                     output.push(name.to_owned());
@@ -138,17 +153,25 @@ impl VecActionProducer {
     }
 
     fn cleanup_multiple_creates(actions: Vec<ZfsAction>) -> Vec<ZfsAction> {
-        let mut known_datasets: HashMap<String, HashMap<String, PropertyValue>> = HashMap::new();
+        let mut known_datasets: HashMap<String, (DatasetType, HashMap<String, PropertyValue>)> =
+            HashMap::new();
 
         actions
             .into_iter()
             .flat_map::<Box<[ZfsAction]>, _>(|action| match &action {
-                ZfsAction::CreateDataset { name, properties } => {
+                ZfsAction::CreateDataset {
+                    r#type,
+                    name,
+                    properties,
+                } => {
                     log::trace!("optimizing {:?}", action);
                     let mut edited_properties = HashMap::new();
 
-                    if let Some(existing_properties) = known_datasets.get(name) {
+                    if let Some((existing_type, existing_properties)) = known_datasets.get(name) {
                         log::trace!("known dateset {}", name);
+
+                        assert!(existing_type == r#type);
+
                         for (name, value) in properties {
                             if let Some(existing_value) = existing_properties.get(name) {
                                 if existing_value != value {
@@ -193,7 +216,7 @@ impl VecActionProducer {
                         }
                     } else {
                         log::trace!("new dateset {}, keeping", name);
-                        known_datasets.insert(name.clone(), properties.clone());
+                        known_datasets.insert(name.clone(), (*r#type, properties.clone()));
                         [action].into_iter().collect()
                     }
                 }
@@ -264,6 +287,7 @@ where
                 (
                     k,
                     ZfsSpecificationDataset::new(
+                        v.r#type,
                         filter_by_pats!(
                             v.properties.into_iter(),
                             ignored_properties.unwrap_or(&spec.ignored_properties)
@@ -297,6 +321,7 @@ where
                     log::trace!("create parent dataset {}", dataset_part);
                     action_producer.produce_action(ZfsAction::CreateDataset {
                         name: dataset_part.to_owned(),
+                        r#type: DatasetType::FileSystem,
                         properties: HashMap::new(),
                     })
                 }
@@ -313,6 +338,7 @@ where
             );
             action_producer.produce_action(ZfsAction::CreateDataset {
                 name: dataset_name.to_owned(),
+                r#type: desired_dataset.r#type,
                 properties: desired_dataset
                     .properties
                     .iter()

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    property::{Property, PropertySource},
+    property::{DatasetType, Property, PropertySource},
     zfs_specification::{self, ZfsSpecification, ZfsSpecificationDataset},
 };
 
@@ -15,16 +15,6 @@ struct ZfsListVersion {
     command: String,
     vers_major: i32,
     vers_minor: i32,
-}
-
-#[derive(Deserialize, Debug)]
-enum DatasetType {
-    #[serde(rename(deserialize = "FILESYSTEM"))]
-    FileSystem,
-    #[serde(rename(deserialize = "SNAPSHOT"))]
-    Snapshot,
-    #[serde(rename(deserialize = "ZVOL"))]
-    Zvol,
 }
 
 #[derive(Deserialize, Debug)]
@@ -96,7 +86,15 @@ impl ZfsList {
             }
             None => go(
                 "zfs",
-                ["get", "all", "-t", "filesystem", "--json", "--json-int"].into_iter(),
+                [
+                    "get",
+                    "all",
+                    "-t",
+                    "filesystem,volume",
+                    "--json",
+                    "--json-int",
+                ]
+                .into_iter(),
             ),
         }
     }
@@ -120,6 +118,7 @@ impl ZfsList {
                     (
                         k,
                         ZfsSpecificationDataset::new(
+                            v.r#type,
                             v.properties
                                 .into_iter()
                                 .filter(|(k, _)| match &filter.properties {
