@@ -4,7 +4,7 @@ use std::{collections::HashMap, io::Read};
 
 use crate::{
     prefix_paths::PrefixPaths,
-    property::{PropertySource, PropertyValue},
+    property::{DatasetType, PropertySource, PropertyValue},
 };
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -44,15 +44,17 @@ mod serde_pattern {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct ZfsSpecificationDataset {
+    pub r#type: DatasetType,
     pub properties: HashMap<String, Property>,
 }
 
 impl ZfsSpecificationDataset {
-    pub fn new<S>(properties: HashMap<S, Property>) -> ZfsSpecificationDataset
+    pub fn new<S>(r#type: DatasetType, properties: HashMap<S, Property>) -> ZfsSpecificationDataset
     where
         S: AsRef<str>,
     {
         ZfsSpecificationDataset {
+            r#type: r#type,
             properties: properties
                 .into_iter()
                 .map(|(k, value)| (k.as_ref().to_owned(), value))
@@ -60,8 +62,8 @@ impl ZfsSpecificationDataset {
         }
     }
 
-    pub fn empty() -> ZfsSpecificationDataset {
-        ZfsSpecificationDataset::new::<String>(HashMap::new())
+    pub fn empty(r#type: DatasetType) -> ZfsSpecificationDataset {
+        ZfsSpecificationDataset::new::<String>(r#type, HashMap::new())
     }
 
     pub fn get_property<S>(&self, name: S) -> Option<&Property>
@@ -111,7 +113,7 @@ impl ZfsSpecification {
             for dataset_prefix in PrefixPaths::new(&name) {
                 self.datasets
                     .entry(dataset_prefix.to_string())
-                    .or_insert(ZfsSpecificationDataset::empty());
+                    .or_insert(ZfsSpecificationDataset::empty(DatasetType::FileSystem));
             }
         }
     }

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    property::{Property, PropertySource},
+    property::{DatasetType, Property, PropertySource},
     zfs_specification::{self, ZfsSpecification, ZfsSpecificationDataset},
 };
 
@@ -15,16 +15,6 @@ struct ZfsListVersion {
     command: String,
     vers_major: i32,
     vers_minor: i32,
-}
-
-#[derive(Deserialize, Debug)]
-enum DatasetType {
-    #[serde(rename(deserialize = "FILESYSTEM"))]
-    FileSystem,
-    #[serde(rename(deserialize = "SNAPSHOT"))]
-    Snapshot,
-    #[serde(rename(deserialize = "ZVOL"))]
-    Zvol,
 }
 
 #[derive(Deserialize, Debug)]
@@ -86,6 +76,36 @@ impl ZfsList {
                 .args(tail)
                 .output()
                 .and_then(|output| serde_json::from_slice(&output.stdout).map_err(|err| err.into()))
+                .map(|output: ZfsList| ZfsList {
+                    output_version: output.output_version,
+                    datasets: output
+                        .datasets
+                        .into_iter()
+                        .map(|(path, dataset)| {
+                            if dataset.r#type == DatasetType::Volume {
+                                (
+                                    path,
+                                    Dataset {
+                                        name: dataset.name,
+                                        r#type: dataset.r#type,
+                                        pool: dataset.pool,
+                                        createtxg: dataset.createtxg,
+                                        properties: dataset
+                                            .properties
+                                            .into_iter()
+                                            // refreservation can also be just reservation if the refreservation feature
+                                            // isn't enabled, however this feature was introduced before OpenZFS was ported
+                                            // to Linux 18 years ago, as such we can probably ignore that.
+                                            .filter(|(key, _)| key != "refreservation")
+                                            .collect(),
+                                    },
+                                )
+                            } else {
+                                (path, dataset)
+                            }
+                        })
+                        .collect(),
+                })
         }
 
         match command {
@@ -96,7 +116,15 @@ impl ZfsList {
             }
             None => go(
                 "zfs",
-                ["get", "all", "-t", "filesystem", "--json", "--json-int"].into_iter(),
+                [
+                    "get",
+                    "all",
+                    "-t",
+                    "filesystem,volume",
+                    "--json",
+                    "--json-int",
+                ]
+                .into_iter(),
             ),
         }
     }
@@ -120,6 +148,7 @@ impl ZfsList {
                     (
                         k,
                         ZfsSpecificationDataset::new(
+                            v.r#type,
                             v.properties
                                 .into_iter()
                                 .filter(|(k, _)| match &filter.properties {

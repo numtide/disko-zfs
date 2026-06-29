@@ -72,12 +72,21 @@ in
       datasets = lib.mkOption {
         type = lib.types.lazyAttrsOf (
           (lib.types.submodule {
-            options.properties = lib.mkOption {
-              type = lib.types.attrsOf (lib.types.either lib.types.int lib.types.str);
-              default = { };
-              description = ''
-                Properties that this dataset should have.
-              '';
+            options = {
+              type = lib.mkOption {
+                type = lib.types.enum [
+                  "Volume"
+                  "FileSystem"
+                ];
+                default = "FileSystem";
+              };
+              properties = lib.mkOption {
+                type = lib.types.attrsOf (lib.types.either lib.types.int lib.types.str);
+                default = { };
+                description = ''
+                  Properties that this dataset should have.
+                '';
+              };
             };
           })
         );
