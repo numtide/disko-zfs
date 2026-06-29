@@ -76,6 +76,36 @@ impl ZfsList {
                 .args(tail)
                 .output()
                 .and_then(|output| serde_json::from_slice(&output.stdout).map_err(|err| err.into()))
+                .map(|output: ZfsList| ZfsList {
+                    output_version: output.output_version,
+                    datasets: output
+                        .datasets
+                        .into_iter()
+                        .map(|(path, dataset)| {
+                            if dataset.r#type == DatasetType::Volume {
+                                (
+                                    path,
+                                    Dataset {
+                                        name: dataset.name,
+                                        r#type: dataset.r#type,
+                                        pool: dataset.pool,
+                                        createtxg: dataset.createtxg,
+                                        properties: dataset
+                                            .properties
+                                            .into_iter()
+                                            // refreservation can also be just reservation if the refreservation feature
+                                            // isn't enabled, however this feature was introduced before OpenZFS was ported
+                                            // to Linux 18 years ago, as such we can probably ignore that.
+                                            .filter(|(key, _)| key != "refreservation")
+                                            .collect(),
+                                    },
+                                )
+                            } else {
+                                (path, dataset)
+                            }
+                        })
+                        .collect(),
+                })
         }
 
         match command {
