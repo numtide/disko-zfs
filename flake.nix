@@ -8,7 +8,7 @@
   };
 
   outputs =
-    inputs@{ flake-parts, ... }:
+    inputs@{ self, flake-parts, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } (
       { lib, ... }:
       {
@@ -32,12 +32,10 @@
             packages.default = config.packages.disko-zfs;
           };
 
-        flake.nixosModules.default = lib.modules.importApply ./nixos/modules/default.nix {
-          inherit inputs;
+        flake.nixosModules.default = lib.modules.importApply ./nixos/modules {
+          overlay = self.overlays.default;
         };
-        flake.overlays.default = final: _: {
-          disko-zfs = final.callPackage ./package.nix { };
-        };
+        flake.overlays.default = import ./overlay.nix;
 
         systems = [
           "x86_64-linux"

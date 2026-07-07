@@ -1,4 +1,4 @@
-{ inputs }:
+{ overlay }:
 {
   pkgs,
   lib,
@@ -91,9 +91,7 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
-        nixpkgs.overlays = [
-          inputs.self.overlays.default
-        ];
+        nixpkgs.overlays = [ overlay ];
 
         systemd.services."disko-zfs" = {
           unitConfig.DefaultDependencies = false;
