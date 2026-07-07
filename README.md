@@ -4,6 +4,11 @@
 
 ## Getting Started
 
+### Installing the NixOS module
+
+<details>
+  <summary>Flakes (recommended)</summary>
+
 First you have to add this flake as a flake input:
 
 ```nix
@@ -46,6 +51,30 @@ Next you need to add the `diskoZfs` module to your NixOS configuration. How spef
   };
 }
 ```
+
+</details>
+
+<details>
+  <summary>nix-channel</summary>
+
+First you have to add disko-zfs source as a new channel. To do that, run as root:
+
+```console
+nix-channel --add https://github.com/numtide/disko-zfs/archive/main.tar.gz disko-zfs
+nix-channel --update disko-zfs
+```
+
+Next you need to add the `diskoZfs` module to your NixOS configuration. How spefically you need to do that is highly dependant, but in the most basic case you need to add the following import to your `configuration.nix`:
+
+```nix
+{
+  imports = [ <disko-zfs/module.nix> ];
+}
+```
+
+</details>
+
+### Using the NixOS module
 
 With the module in-place, you can use `disko-zfs` like so:
 
