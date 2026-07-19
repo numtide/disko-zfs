@@ -359,7 +359,10 @@ where
                 continue;
             }
 
-            if actual_property.value == desired_property.value {
+            if actual_property
+                .value
+                .equivalent_for_property(&desired_property.value, desired_property_name)
+            {
                 log::trace!(
                     "dataset {} property {} already set to {}, skip",
                     dataset_name,

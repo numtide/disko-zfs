@@ -1,0 +1,24 @@
+{
+  "datasets": {
+    "zroot/dataset": {
+      "properties": {
+        "quota": "none",
+        "refquota": "none",
+        "reservation": "none",
+        "refreservation": "none",
+        "defaultuserquota": "none",
+        "defaultgroupquota": "none",
+        "defaultprojectquota": "none",
+        "defaultuserobjquota": "none",
+        "defaultgroupobjquota": "none",
+        "defaultprojectobjquota": "none",
+        "zoned_uid": "none",
+        "filesystem_limit": "none",
+        "snapshot_limit": "none",
+        "special_small_blocks": 0
+      }
+    }
+  },
+  "ignoredDatasets": [],
+  "ignoredProperties": []
+}
