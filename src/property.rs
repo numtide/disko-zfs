@@ -52,6 +52,55 @@ impl PropertyValue {
             PropertyValue::String(string) => string.clone(),
         }
     }
+
+    pub fn equivalent_for_property(&self, other: &Self, property_name: &str) -> bool {
+        let none_is_sentinel = numeric_none_sentinel(property_name).is_some_and(|sentinel| {
+            matches!(
+                (self, other),
+                (Self::Number(number), Self::String(value))
+                    | (Self::String(value), Self::Number(number))
+                    if *number == sentinel && value == "none"
+            )
+        });
+
+        none_is_sentinel || self == other
+    }
+}
+
+fn numeric_none_sentinel(property_name: &str) -> Option<u64> {
+    const ZERO_SENTINEL_PROPERTIES: [&str; 11] = [
+        "quota",
+        "refquota",
+        "reservation",
+        "refreservation",
+        "defaultuserquota",
+        "defaultgroupquota",
+        "defaultprojectquota",
+        "defaultuserobjquota",
+        "defaultgroupobjquota",
+        "defaultprojectobjquota",
+        "zoned_uid",
+    ];
+    const ZERO_SENTINEL_PREFIXES: [&str; 6] = [
+        "userquota@",
+        "groupquota@",
+        "projectquota@",
+        "userobjquota@",
+        "groupobjquota@",
+        "projectobjquota@",
+    ];
+
+    if ZERO_SENTINEL_PROPERTIES.contains(&property_name)
+        || ZERO_SENTINEL_PREFIXES
+            .iter()
+            .any(|prefix| property_name.starts_with(prefix))
+    {
+        Some(0)
+    } else if matches!(property_name, "filesystem_limit" | "snapshot_limit") {
+        Some(u64::MAX)
+    } else {
+        None
+    }
 }
 
 // According to zfs_nicestrtonum in zfs/lib/libzfs/libzfs_util.c
@@ -163,6 +212,50 @@ impl Serialize for PropertyValue {
             PropertyValue::Number(num) => num.serialize(serializer),
             PropertyValue::String(str) => str.serialize(serializer),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PropertyValue;
+
+    #[test]
+    fn none_uses_each_property_numeric_sentinel() {
+        let none = PropertyValue::String("none".to_owned());
+        let zero = PropertyValue::Number(0);
+
+        for property_name in [
+            "quota",
+            "refquota",
+            "reservation",
+            "refreservation",
+            "defaultuserquota",
+            "defaultgroupquota",
+            "defaultprojectquota",
+            "defaultuserobjquota",
+            "defaultgroupobjquota",
+            "defaultprojectobjquota",
+            "zoned_uid",
+            "userquota@1000",
+            "groupquota@1000",
+            "projectquota@1000",
+            "userobjquota@1000",
+            "groupobjquota@1000",
+            "projectobjquota@1000",
+        ] {
+            assert!(none.equivalent_for_property(&zero, property_name));
+            assert!(zero.equivalent_for_property(&none, property_name));
+        }
+
+        let maximum = PropertyValue::Number(u64::MAX);
+        for property_name in ["filesystem_limit", "snapshot_limit"] {
+            assert!(none.equivalent_for_property(&maximum, property_name));
+            assert!(maximum.equivalent_for_property(&none, property_name));
+            assert!(!none.equivalent_for_property(&zero, property_name));
+        }
+
+        assert!(!none.equivalent_for_property(&zero, "special_small_blocks"));
+        assert!(!none.equivalent_for_property(&zero, "example:custom"));
     }
 }
 

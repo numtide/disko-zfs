@@ -1,0 +1,122 @@
+{
+  "output_version": {
+    "command": "zfs get",
+    "vers_major": 2,
+    "vers_minor": 3
+  },
+  "datasets": {
+    "zroot": {
+      "name": "zroot",
+      "type": "FILESYSTEM",
+      "pool": "zroot",
+      "createtxg": 1,
+      "properties": {}
+    },
+    "zroot/dataset": {
+      "name": "zroot/dataset",
+      "type": "FILESYSTEM",
+      "pool": "zroot",
+      "createtxg": 2,
+      "properties": {
+        "quota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "refquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "reservation": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "refreservation": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "defaultuserquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "defaultgroupquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "defaultprojectquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "defaultuserobjquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "defaultgroupobjquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "defaultprojectobjquota": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "zoned_uid": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "filesystem_limit": {
+          "value": 18446744073709551615,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "snapshot_limit": {
+          "value": 18446744073709551615,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        },
+        "special_small_blocks": {
+          "value": 0,
+          "source": {
+            "type": "LOCAL",
+            "data": "none"
+          }
+        }
+      }
+    }
+  }
+}
