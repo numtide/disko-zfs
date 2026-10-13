@@ -154,6 +154,18 @@ in
           lib.flatten
           lib.listToAttrs
         ];
+
+        # local-fs-pre.target is already reached on a switch, so only this orders a new mount after its dataset exists.
+        fileSystems = lib.pipe config.disko.devices.zpool [
+          lib.attrValues
+          (lib.concatMap (pool: lib.attrValues pool.datasets))
+          (lib.filter (dataset: dataset.mountpoint or null != null))
+          (lib.map (
+            dataset:
+            lib.nameValuePair dataset.mountpoint { options = [ "x-systemd.after=disko-zfs.service" ]; }
+          ))
+          lib.listToAttrs
+        ];
       })
     ]
   );
